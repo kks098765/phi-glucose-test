@@ -10,7 +10,7 @@
 *{box-sizing:border-box}body{font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);margin:0}main{max-width:650px;margin:auto;padding:22px 15px 42px}h1{font-size:27px;margin:5px 0 0}h2{font-size:19px;margin:0 0 12px}.eyebrow{color:var(--accent);letter-spacing:.14em;font-size:11px;font-weight:800}.sub{color:var(--muted);font-size:13px;margin:4px 0 18px}.card{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:17px;margin:0 0 14px;box-shadow:0 3px 14px rgba(26,72,66,.04)}button,.camera{font:inherit;border:0;border-radius:11px;font-weight:700;cursor:pointer}button{padding:12px 14px}.primary{width:100%;background:var(--accent);color:white}.secondary{background:#e4f1ed;color:#205e58;width:100%}.outline{border:1px solid #e8c8bf;background:white;color:var(--err);font-size:12px;padding:8px}button:disabled{opacity:.52}.camera{display:block;background:#e7f3ee;color:#206960;border:2px dashed #91b7a8;padding:22px 12px;text-align:center;position:relative}.camera input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.preview{width:100%;max-height:290px;object-fit:contain;display:none;margin:13px 0;border-radius:10px}.hint{color:var(--muted);font-size:12px;margin:8px 0 14px}.field{display:block;font-weight:700;font-size:13px;margin:14px 0 6px}input[type=number],input[type=datetime-local]{font:inherit;padding:12px;border:1px solid #b5cbc5;width:100%;border-radius:10px;background:white;color:var(--ink)}.result{border:1px solid #d8ebe4;background:#f5fbf8;border-radius:12px;padding:11px;margin:12px 0;font-size:13px}.result strong{font-size:20px}.status{min-height:20px;font-size:13px;color:#246d59;margin:10px 0}.error{color:var(--err)}.record{display:grid;grid-template-columns:60px 1fr auto;gap:11px;align-items:center;border-top:1px solid var(--line);padding:12px 0}.record:first-child{border-top:0}.thumb{width:60px;height:60px;object-fit:cover;border-radius:8px;background:#e5efec}.reading{font-weight:800;font-size:19px}.small{font-size:12px;color:var(--muted)}.head{display:flex;justify-content:space-between;align-items:center;gap:8px}.footer{font-size:12px;color:var(--muted);text-align:center;margin:16px}.focus-area{margin:12px 0}.focus-area canvas{display:block;width:100%;max-height:360px;object-fit:contain;background:#ecf2ef;border:1px solid #bad6ce;border-radius:10px;touch-action:none}.focus-area p{font-size:12px;color:var(--muted);margin:7px 0}.notice{background:#fff8ec;color:#6d4b23;padding:12px;border-radius:10px;border:1px solid #ebdfc5;font-size:12px;margin-top:12px}[hidden]{display:none!important}
 </style></head>
 <body><main>
-<div class="eyebrow">PERSONAL HEALTH INTELLIGENCE</div><h1>My Glucose Journal</h1><p class="sub">iPhone prototype 0.7 · Glucose LCD reader → confirm → save</p>
+<div class="eyebrow">PERSONAL HEALTH INTELLIGENCE</div><h1>My Glucose Journal</h1><p class="sub">iPhone prototype 0.8 · Glucose LCD reader → confirm → save</p>
 <section class="card"><h2>New glucose reading</h2>
 <label class="camera">📷 Take or choose a glucose-meter photo<input id="photo" type="file" accept="image/*" aria-label="Photograph a glucose meter"></label>
 <img id="preview" class="preview" alt="Selected glucose meter photograph">
@@ -18,6 +18,16 @@
 <div id="recognition" class="result" role="status" aria-live="polite">Select a photo. PHI will attempt to read the large LCD digits.</div>
 <div id="focusArea" class="focus-area" hidden><p>For a clearer scan, drag a rectangle around the TWO large glucose digits only (exclude the small date/time). This is a testing aid.</p><canvas id="focusCanvas" aria-label="Photo with crop selection"></canvas><button id="scanFocus" class="secondary" type="button">Read selected digits</button></div>
 <button id="retry" class="secondary" type="button" disabled>Try automatic recognition</button>
+<details id="diagnosticPanel" style="margin:12px 0;border:1px solid #dae6e3;padding:10px;border-radius:10px">
+<summary style="cursor:pointer;font-weight:700;font-size:13px">Recognition diagnostic (when reading fails)</summary>
+<p class="hint">No photograph or saved health records are included. Copy the text and paste it into our chat.</p>
+<textarea id="diagnosticText" readonly spellcheck="false" aria-label="Recognition diagnostic report" style="width:100%;height:155px;font:12px/1.4 ui-monospace,monospace;resize:vertical;border:1px solid #b5cbc5;border-radius:8px;padding:9px"></textarea>
+<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px">
+<button id="copyDiagnostic" class="secondary" type="button" style="flex:1">Copy diagnostic</button>
+<button id="downloadDiagnostic" class="secondary" type="button" style="flex:1">Download .txt</button>
+</div>
+<p id="diagnosticStatus" class="hint" role="status"></p>
+</details>
 <label class="field" for="glucose">Confirm glucose value (mmol/L)</label><input id="glucose" type="number" inputmode="decimal" min="0.1" max="60" step="0.1" placeholder="Reading appears here; correct if needed">
 <label class="field" for="measured">Measurement date and time</label><input id="measured" type="datetime-local"><p class="hint">Defaults to the phone's current time. For a stored meter reading, change it to the time shown on the meter.</p>
 <button id="save" class="primary" type="button">Confirm and save reading</button><div id="status" class="status" role="status" aria-live="polite"></div>
@@ -44,6 +54,32 @@ function releasePreview(){if(previewURL){URL.revokeObjectURL(previewURL);preview
 // First attempts a few coarse areas; a user-selected area is a fallback during testing.
 const segmentDigits={"1110111":"0","0010010":"1","1011101":"2","1011011":"3","0111010":"4","1101011":"5","1101111":"6","1010010":"7","1111111":"8","1111011":"9"};
 let fullPhoto=null, focusRect=null, drawingStart=null;
+let diagnosticLines=[];
+function logDiagnostic(message){
+  diagnosticLines.push(String(message));
+  if(diagnosticLines.length>80)diagnosticLines.splice(1,diagnosticLines.length-80);
+  $('diagnosticText').value=diagnosticLines.join('\n');
+}
+function resetDiagnostic(){
+  diagnosticLines=['PHI glucose recognition diagnostic — v0.8', 'Timestamp: '+new Date().toISOString(), 'Device: '+navigator.userAgent.slice(0,180)];
+  $('diagnosticStatus').textContent='';
+  $('diagnosticText').value=diagnosticLines.join('\n');
+}
+resetDiagnostic();
+$('copyDiagnostic').addEventListener('click',async()=>{
+  const value=$('diagnosticText').value;
+  try{await navigator.clipboard.writeText(value);$('diagnosticStatus').textContent='Copied. Paste this text into our chat.';}
+  catch(e){$('diagnosticText').focus();$('diagnosticText').select();$('diagnosticStatus').textContent='Text selected. Use Copy in the selection menu, then paste it here.';}
+});
+$('downloadDiagnostic').addEventListener('click',()=>{
+  const blob=new Blob([$('diagnosticText').value],{type:'text/plain;charset=utf-8'});
+  const url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download='phi_recognition_diagnostic.txt';document.body.append(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  $('diagnosticStatus').textContent='Diagnostic prepared for download.';
+});
+window.addEventListener('error',e=>logDiagnostic('JavaScript error: '+e.message));
+window.addEventListener('unhandledrejection',e=>logDiagnostic('Unhandled promise error: '+String(e.reason)));
 async function photoBitmap(file){
   if('createImageBitmap' in window){try{return await createImageBitmap(file)}catch(e){}}
   return new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(Error('Unable to open photo'))};img.src=url});
@@ -60,7 +96,8 @@ function sampleMedian(a,w,h,x,y,rad){
 }
 function samplePixels(gray,w,h,x,y,rad){return sampleMedian(gray,w,h,x*w,y*h,rad);}
 function readSegments(source,box){
-  const {x,y,w,h}=box; if(w<30||h<35)return null;
+  const {x,y,w,h}=box;
+  if(w<30||h<35){logDiagnostic('Crop too small: '+w+'x'+h);return null;}
   // Evaluate two-digit patterns, in both active-dark and active-light display styles.
   const ctx=source.getContext('2d',{willReadFrequently:true});
   const raw=ctx.getImageData(Math.round(x),Math.round(y),Math.round(w),Math.round(h));
@@ -77,9 +114,11 @@ function readSegments(source,box){
       const pattern=vals.map(v=>(polarity==='dark'?v<threshold:v>threshold)?'1':'0').join('');
       const ch=segmentDigits[pattern]||'?';chars.push(ch);gaps.push(hi-lo);
     }
+    logDiagnostic('  '+polarity+': segments='+chars.join('')+' min contrast='+Math.min(...gaps)+' (7 segments/digit)');
     if(!chars.includes('?')&&Math.min(...gaps)>25){readings.push({value:Number(chars[0]+'.'+chars[1]),mode:polarity,contrast:Math.min(...gaps)});}
   }
   const unique=[...new Set(readings.map(r=>r.value))];
+  logDiagnostic('  accepted='+ (unique.length===1?readings[0].value.toFixed(1):'none')+'; valid alternatives='+unique.join(','));
   return unique.length===1?readings[0]:null;
 }
 function clampRect(r,source){
@@ -94,9 +133,16 @@ function attemptAuto(source){
     [.39,.35,.18,.15],[.38,.47,.18,.19]
   ];
   const vals=[];
-  for(const [x,y,w,h] of candidates){const result=readSegments(source,clampRect({x:x*source.width,y:y*source.height,w:w*source.width,h:h*source.height},source));if(result)vals.push(result.value);}
+  for(let i=0;i<candidates.length;i++){
+    const [x,y,w,h]=candidates[i];
+    const rect=clampRect({x:x*source.width,y:y*source.height,w:w*source.width,h:h*source.height},source);
+    logDiagnostic('Auto crop '+(i+1)+'/'+candidates.length+' at '+[rect.x,rect.y,rect.w,rect.h].join(','));
+    const result=readSegments(source,rect);
+    if(result)vals.push(result.value);
+  }
   const counts=new Map();vals.forEach(v=>counts.set(v,(counts.get(v)||0)+1));
   const sorted=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
+  logDiagnostic('Auto candidate votes: '+(sorted.length?sorted.map(x=>x[0].toFixed(1)+'='+x[1]).join('; '):'(none)'));
   return sorted.length===1&&sorted[0][1]>=2?sorted[0][0]:null;
 }
 function drawFocus(){
@@ -111,24 +157,30 @@ $('focusCanvas').addEventListener('pointermove',e=>{if(!drawingStart)return;cons
 $('focusCanvas').addEventListener('pointerup',()=>{drawingStart=null});
 $('scanFocus').addEventListener('click',()=>{
   if(!focusRect||!fullPhoto||focusRect.w<15||focusRect.h<15){note('Draw a box around both large glucose digits, then tap Read selected digits.');return}
+  logDiagnostic('Manual focus rect: '+[focusRect.x,focusRect.y,focusRect.w,focusRect.h].join(','));
   const v=readSegments(fullPhoto,clampRect(focusRect,fullPhoto));
   if(v&&Number.isFinite(v.value)){$('glucose').value=v.value.toFixed(1);note('Experimental seven-segment reading: '+v.value.toFixed(1)+' mmol/L. CHECK it against the meter before saving.');}
   else note('The selected area could not be read reliably. Correct the rectangle or enter the reading yourself.');
 });
 async function recognise(){
-  if(!selectedFile||busy)return;busy=true;$('retry').disabled=true;note('Scanning LCD digits on this iPhone…');
+  if(!selectedFile||busy)return;
+  logDiagnostic('Recognition started');
+  busy=true;$('retry').disabled=true;note('Scanning LCD digits on this iPhone…');
   try{
     const image=await photoBitmap(selectedFile);
     const c=prepareCanvas(image);if(typeof image.close==='function')image.close();
     fullPhoto=c;focusRect=null;drawFocus();$('focusArea').hidden=false;
+    logDiagnostic('Photo decoded: '+image.width+'x'+image.height+', processed '+c.width+'x'+c.height);
     const value=attemptAuto(c);
-    if(value!==null){$('glucose').value=value.toFixed(1);note('Possible reading: '+value.toFixed(1)+' mmol/L. Verify carefully; this is experimental.');}
-    else note('Automatic reading is uncertain. Draw a box around the TWO large digits below for a focused scan, or enter the number manually.');
-  }catch(e){note('Could not analyse this photo: '+(e.message||e));}
+    if(value!==null){$('glucose').value=value.toFixed(1);logDiagnostic('Result: candidate '+value.toFixed(1)+' (UNVERIFIED)');note('Possible reading: '+value.toFixed(1)+' mmol/L. Verify carefully; this is experimental.');}
+    else {logDiagnostic('Result: no confident automatic reading');note('Automatic reading is uncertain (see Recognition diagnostic). You can select the digits below or enter the value manually.');}
+  }catch(e){logDiagnostic('Recognition error: '+(e.stack||e.message||e));note('Recognition error: '+(e.message||e)+'. Open Recognition diagnostic below.');}
   finally{busy=false;$('retry').disabled=false}
 }
 $('photo').addEventListener('change',async()=>{
+  resetDiagnostic();
   const f=$('photo').files[0];selectedFile=f||null;releasePreview();$('glucose').value='';$('focusArea').hidden=true;fullPhoto=null;focusRect=null;
+  if(f)logDiagnostic('File type: '+f.type+', size: '+f.size+' bytes');
   if(!f){$('preview').style.display='none';note('Select a photo to try recognition.');$('retry').disabled=true;return}
   previewURL=URL.createObjectURL(f);$('preview').src=previewURL;$('preview').style.display='block';$('retry').disabled=false;
   await recognise();
