@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#277c75"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png">
+<title>PHI · Glucose</title>
+<style>
+:root{--ink:#243c43;--accent:#277c75;--muted:#667a7d;--line:#dae6e3;--paper:#fff;--bg:#f3f8f6;--err:#9d472f}
+*{box-sizing:border-box}body{font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);margin:0}main{max-width:650px;margin:auto;padding:22px 15px 42px}h1{font-size:27px;margin:5px 0 0}h2{font-size:19px;margin:0 0 12px}.eyebrow{color:var(--accent);letter-spacing:.14em;font-size:11px;font-weight:800}.sub{color:var(--muted);font-size:13px;margin:4px 0 18px}.card{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:17px;margin:0 0 14px;box-shadow:0 3px 14px rgba(26,72,66,.04)}button,.camera{font:inherit;border:0;border-radius:11px;font-weight:700;cursor:pointer}button{padding:12px 14px}.primary{width:100%;background:var(--accent);color:white}.secondary{background:#e4f1ed;color:#205e58;width:100%}.outline{border:1px solid #e8c8bf;background:white;color:var(--err);font-size:12px;padding:8px}button:disabled{opacity:.52}.camera{display:block;background:#e7f3ee;color:#206960;border:2px dashed #91b7a8;padding:22px 12px;text-align:center;position:relative}.camera input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.preview{width:100%;max-height:290px;object-fit:contain;display:none;margin:13px 0;border-radius:10px}.hint{color:var(--muted);font-size:12px;margin:8px 0 14px}.field{display:block;font-weight:700;font-size:13px;margin:14px 0 6px}input[type=number],input[type=datetime-local]{font:inherit;padding:12px;border:1px solid #b5cbc5;width:100%;border-radius:10px;background:white;color:var(--ink)}.result{border:1px solid #d8ebe4;background:#f5fbf8;border-radius:12px;padding:11px;margin:12px 0;font-size:13px}.result strong{font-size:20px}.status{min-height:20px;font-size:13px;color:#246d59;margin:10px 0}.error{color:var(--err)}.record{display:grid;grid-template-columns:60px 1fr auto;gap:11px;align-items:center;border-top:1px solid var(--line);padding:12px 0}.record:first-child{border-top:0}.thumb{width:60px;height:60px;object-fit:cover;border-radius:8px;background:#e5efec}.reading{font-weight:800;font-size:19px}.small{font-size:12px;color:var(--muted)}.head{display:flex;justify-content:space-between;align-items:center;gap:8px}.footer{font-size:12px;color:var(--muted);text-align:center;margin:16px}.notice{background:#fff8ec;color:#6d4b23;padding:12px;border-radius:10px;border:1px solid #ebdfc5;font-size:12px;margin-top:12px}[hidden]{display:none!important}
+</style></head>
+<body><main>
+<div class="eyebrow">PERSONAL HEALTH INTELLIGENCE</div><h1>My Glucose Journal</h1><p class="sub">iPhone prototype 0.6 · Camera → recognise → confirm → save</p>
+<section class="card"><h2>New glucose reading</h2>
+<label class="camera">📷 Take or choose a glucose-meter photo<input id="photo" type="file" accept="image/*" capture="environment" aria-label="Photograph a glucose meter"></label>
+<img id="preview" class="preview" alt="Selected glucose meter photograph">
+<p class="hint">Use an existing meter photo during testing. No new glucose test needed.</p>
+<div id="recognition" class="result" role="status" aria-live="polite">Select a photo to try automatic recognition. It may not read every LCD display.</div>
+<button id="retry" class="secondary" type="button" disabled>Try recognition again</button>
+<label class="field" for="glucose">Confirm glucose value (mmol/L)</label><input id="glucose" type="number" inputmode="decimal" min="0.1" max="60" step="0.1" placeholder="Reading appears here; correct if needed">
+<label class="field" for="measured">Measurement date and time</label><input id="measured" type="datetime-local"><p class="hint">Defaults to the phone's current time. For a stored meter reading, change it to the time shown on the meter.</p>
+<button id="save" class="primary" type="button">Confirm and save reading</button><div id="status" class="status" role="status" aria-live="polite"></div>
+<div id="capacityNotice" class="notice" hidden></div>
+</section>
+<section class="card"><div class="head"><h2>Saved readings</h2><span class="small" id="count"></span></div><div id="history" class="small">Loading…</div></section>
+<p class="footer">Testing only. Data stays in this browser's local storage; it is not intentionally uploaded. Recognition is experimental and must be checked.</p>
+</main>
+<script>
+'use strict';
+const DB='phi_personal_v01',STORE='readings',$=id=>document.getElementById(id);
+let db=null,selectedFile=null,previewURL=null,historyURLs=[],busy=false,ocrWorker=null;
+const LIMIT=8*1e9,WARN=7*1e9,STRONG=7.5*1e9;
+function nowLocal(){let d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)}
+$('measured').value=nowLocal();
+function status(t,err=false){$('status').textContent=t;$('status').className='status'+(err?' error':'')}
+function note(t){$('recognition').textContent=t}
+function openDB(){return new Promise((resolve,reject)=>{let r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(STORE))r.result.createObjectStore(STORE,{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+function readAll(){return new Promise((resolve,reject)=>{let r=db.transaction(STORE).objectStore(STORE).getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+function put(item){return new Promise((resolve,reject)=>{let tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(item);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)})}
+function remove(id){return new Promise((resolve,reject)=>{let tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)})}
+function releasePreview(){if(previewURL){URL.revokeObjectURL(previewURL);previewURL=null}}
+function parseCandidate(text){
+  const matches=[...text.replace(/\s+/g,' ').matchAll(/(?:^|[^\d])([1-9]|[12]\d|3[0-5])[.,]([0-9])(?=$|[^\d])/g)].map(m=>Number(m[1]+'.'+m[2]));
+  return [...new Set(matches)].filter(v=>v>=1&&v<=35);
+}
+function loadScript(url){return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=url;s.onload=resolve;s.onerror=()=>reject(Error('Recognition library did not load'));document.head.append(s)})}
+async function photoBitmap(file){if('createImageBitmap' in window)return createImageBitmap(file);return new Promise((resolve,reject)=>{let im=new Image(),url=URL.createObjectURL(file);im.onload=()=>{URL.revokeObjectURL(url);resolve(im)};im.onerror=reject;im.src=url})}
+async function cropSet(file){
+  const image=await photoBitmap(file),w=image.width,h=image.height;
+  const areas=[{name:'full',x:0,y:0,w:1,h:1},
+    {name:'central',x:.25,y:.21,w:.55,h:.55},
+    {name:'upper centre',x:.26,y:.16,w:.53,h:.43},
+    {name:'left-of-centre',x:.17,y:.22,w:.53,h:.55},
+    {name:'wide display',x:.12,y:.30,w:.68,h:.36}];
+  const variants=[];
+  for(const a of areas){
+    const c=document.createElement('canvas');const sw=Math.round(w*a.w),sh=Math.round(h*a.h);
+    const max=1100,ratio=Math.min(3,max/Math.max(sw,sh));c.width=Math.max(1,Math.round(sw*ratio));c.height=Math.max(1,Math.round(sh*ratio));
+    const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,Math.round(w*a.x),Math.round(h*a.y),sw,sh,0,0,c.width,c.height);
+    if(a.name!=='full'){
+      const pixels=ctx.getImageData(0,0,c.width,c.height);for(let i=0;i<pixels.data.length;i+=4){let v=.299*pixels.data[i]+.587*pixels.data[i+1]+.114*pixels.data[i+2];v=Math.max(0,Math.min(255,(v-128)*1.75+128));pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=v}ctx.putImageData(pixels,0,0);
+    }
+    variants.push({name:a.name,canvas:c});
+  }
+  if(typeof image.close==='function')image.close();return variants;
+}
+async function recognise(){
+  if(!selectedFile||busy)return;busy=true;$('retry').disabled=true;note('Checking meter photo…');
+  try{
+    if(!window.Tesseract)await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+    if(!ocrWorker)ocrWorker=await Tesseract.createWorker('eng',1);
+    await ocrWorker.setParameters({tessedit_char_whitelist:'0123456789.,',tessedit_pageseg_mode:'6'});
+    const crops=await cropSet(selectedFile),votes=new Map();
+    for(const c of crops){
+      const r=await ocrWorker.recognize(c.canvas);const vals=parseCandidate(r?.data?.text||'');
+      for(const v of vals)votes.set(v,(votes.get(v)||0)+1);
+    }
+    const sorted=[...votes].sort((a,b)=>b[1]-a[1]);
+    if(sorted.length===1 || (sorted.length>1&&sorted[0][1]>=2&&sorted[0][1]>sorted[1][1])){
+      const candidate=sorted[0][0];$('glucose').value=candidate.toFixed(1);
+      note('Tentative reading: '+candidate.toFixed(1)+' mmol/L. Check against the photo and correct it before saving.');
+    }else if(sorted.length){note('Recognition is uncertain ('+sorted.map(x=>x[0].toFixed(1)).join(', ')+'). Please enter the display value yourself.');}
+    else note('Could not reliably read this display. Please enter the value shown on the meter.');
+  }catch(e){note('Automatic reading unavailable ('+(e.message||'unknown error')+'). You can still enter and save the reading.');}
+  finally{busy=false;$('retry').disabled=false}
+}
+$('photo').addEventListener('change',async()=>{
+  const f=$('photo').files[0];selectedFile=f||null;releasePreview();$('glucose').value='';
+  if(!f){$('preview').style.display='none';note('Select a photo to try recognition.');$('retry').disabled=true;return}
+  previewURL=URL.createObjectURL(f);$('preview').src=previewURL;$('preview').style.display='block';$('retry').disabled=false;
+  await recognise();
+});
+$('retry').addEventListener('click',recognise);
+function formatWhen(t){const d=new Date(t);return Number.isNaN(d.getTime())?t:d.toLocaleString('en-ZA',{dateStyle:'medium',timeStyle:'short'})}
+async function refresh(){
+  historyURLs.forEach(x=>URL.revokeObjectURL(x));historyURLs=[];
+  const records=(await readAll()).filter(x=>(!x.type||x.type==='glucose')&&Number.isFinite(Number(x.glucose)))
+    .sort((a,b)=>String(b.measurementTime||'').localeCompare(String(a.measurementTime||'')));
+  $('count').textContent=records.length+' total';const h=$('history');h.replaceChildren();if(!records.length){h.textContent='No glucose readings yet.';return}
+  for(const r of records){const row=document.createElement('div');row.className='record';
+    const image=document.createElement('img');image.className='thumb';image.alt='Meter photo';
+    if(r.photo instanceof Blob){let url=URL.createObjectURL(r.photo);historyURLs.push(url);image.src=url}else{image.alt='No photo';}
+    const content=document.createElement('div'),v=document.createElement('div'),time=document.createElement('div');v.className='reading';v.textContent=Number(r.glucose).toFixed(1)+' mmol/L';time.className='small';time.textContent=formatWhen(r.measurementTime);content.append(v,time);
+    const del=document.createElement('button');del.className='outline';del.type='button';del.textContent='Delete';del.onclick=async()=>{if(!confirm('Delete this test record?'))return;await remove(r.id);await refresh();await storageStatus()};row.append(image,content,del);h.append(row)}
+}
+async function approximateManagedBytes(){const all=await readAll();let total=0;for(const r of all){if(r.photo instanceof Blob)total+=r.photo.size;total+=600;}return total;}
+async function storageStatus(){if(!db)return;const bytes=await approximateManagedBytes();const n=$('capacityNotice');n.hidden=true;
+ if(bytes>=WARN){n.hidden=false;n.textContent=bytes>=STRONG?'PHI storage is approaching its 8 GB maximum. Archive older photos soon.':'PHI storage has reached its 7 GB warning level. Consider archiving.'}
+ return bytes;
+}
+$('save').addEventListener('click',async()=>{
+  if(!db){status('Local storage is not available.',true);return}
+  const raw=$('glucose').value.trim(),glucose=Number(raw),time=$('measured').value;
+  if(!selectedFile){status('Choose a meter photograph first.',true);return}
+  if(!raw||!Number.isFinite(glucose)||glucose<.1||glucose>60){status('Confirm a valid glucose value.',true);return}
+  if(!time||Number.isNaN(new Date(time).getTime())){status('Confirm a valid measurement time.',true);return}
+  $('save').disabled=true;
+  try{
+    // Count app-managed photo/data bytes, not a claim about total browser/OS disk usage.
+    const used=await approximateManagedBytes();if(used+selectedFile.size+2048>LIMIT){throw Error('PHI 8 GB storage limit reached. Archive photos before adding new originals.')}
+    const item={id:(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random()),type:'glucose',glucose,measurementTime:time,photo:selectedFile,savedAt:Date.now(),photoCapturedAt:null};
+    await put(item);$('photo').value='';selectedFile=null;releasePreview();$('preview').style.display='none';$('glucose').value='';$('measured').value=nowLocal();note('Choose a photo to try automatic recognition.');$('retry').disabled=true;await refresh();await storageStatus();status('Reading and photograph saved on this iPhone/browser.');
+  }catch(e){status('Save failed: '+(e.message||e),true)}finally{$('save').disabled=false}
+});
+(async()=>{try{db=await openDB();await refresh();await storageStatus()}catch(e){status('Local storage could not open: '+e.message,true);$('history').textContent='Storage unavailable.'}})();
+window.addEventListener('pagehide',()=>{releasePreview();historyURLs.forEach(x=>URL.revokeObjectURL(x))});
+if('serviceWorker' in navigator && location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script></body></html>
