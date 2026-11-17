@@ -10,16 +10,16 @@
 *{box-sizing:border-box}body{font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);margin:0}main{max-width:650px;margin:auto;padding:22px 15px 42px}h1{font-size:27px;margin:5px 0 0}h2{font-size:19px;margin:0 0 12px}.eyebrow{color:var(--accent);letter-spacing:.14em;font-size:11px;font-weight:800}.sub{color:var(--muted);font-size:13px;margin:4px 0 18px}.card{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:17px;margin:0 0 14px;box-shadow:0 3px 14px rgba(26,72,66,.04)}button,.camera{font:inherit;border:0;border-radius:11px;font-weight:700;cursor:pointer}button{padding:12px 14px}.primary{width:100%;background:var(--accent);color:white}.secondary{background:#e4f1ed;color:#205e58;width:100%}.outline{border:1px solid #e8c8bf;background:white;color:var(--err);font-size:12px;padding:8px}button:disabled{opacity:.52}.camera{display:block;background:#e7f3ee;color:#206960;border:2px dashed #91b7a8;padding:22px 12px;text-align:center;position:relative}.camera input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.preview{width:100%;max-height:290px;object-fit:contain;display:none;margin:13px 0;border-radius:10px}.hint{color:var(--muted);font-size:12px;margin:8px 0 14px}.field{display:block;font-weight:700;font-size:13px;margin:14px 0 6px}input[type=number],input[type=datetime-local]{font:inherit;padding:12px;border:1px solid #b5cbc5;width:100%;border-radius:10px;background:white;color:var(--ink)}.result{border:1px solid #d8ebe4;background:#f5fbf8;border-radius:12px;padding:11px;margin:12px 0;font-size:13px}.result strong{font-size:20px}.status{min-height:20px;font-size:13px;color:#246d59;margin:10px 0}.error{color:var(--err)}.record{display:grid;grid-template-columns:60px 1fr auto;gap:11px;align-items:center;border-top:1px solid var(--line);padding:12px 0}.record:first-child{border-top:0}.thumb{width:60px;height:60px;object-fit:cover;border-radius:8px;background:#e5efec}.reading{font-weight:800;font-size:19px}.small{font-size:12px;color:var(--muted)}.head{display:flex;justify-content:space-between;align-items:center;gap:8px}.footer{font-size:12px;color:var(--muted);text-align:center;margin:16px}.focus-area{margin:12px 0}.focus-area canvas{display:block;width:100%;max-height:360px;object-fit:contain;background:#ecf2ef;border:1px solid #bad6ce;border-radius:10px;touch-action:none}.focus-area p{font-size:12px;color:var(--muted);margin:7px 0}.notice{background:#fff8ec;color:#6d4b23;padding:12px;border-radius:10px;border:1px solid #ebdfc5;font-size:12px;margin-top:12px}[hidden]{display:none!important}
 </style></head>
 <body><main>
-<div class="eyebrow">PERSONAL HEALTH INTELLIGENCE</div><h1>My Glucose Journal</h1><p class="sub">iPhone prototype 1.0 · PaddleOCR → confirm → save</p>
+<div class="eyebrow">PERSONAL HEALTH INTELLIGENCE</div><h1>My Glucose Journal</h1><p class="sub">iPhone prototype 1.1 · TrOCR → confirm → save</p>
 <section class="card"><h2>New glucose reading</h2>
 <label class="camera">📷 Take or choose a glucose-meter photo<input id="photo" type="file" accept="image/*" aria-label="Photograph a glucose meter"></label>
 <img id="preview" class="preview" alt="Selected glucose meter photograph">
 <p class="hint">Use an existing meter photo during testing. No new glucose test needed.</p>
-<div id="recognition" class="result" role="status" aria-live="polite">Select a photo. PHI will attempt to read the glucose value with PaddleOCR.</div>
+<div id="recognition" class="result" role="status" aria-live="polite">Select a photo. PHI will attempt to read the glucose digits using TrOCR.</div>
 
 <button id="retry" class="secondary" type="button" disabled>Try recognition again</button>
 <details id="diagnosticPanel" style="margin:12px 0;border:1px solid #dae6e3;padding:10px;border-radius:10px">
-<summary style="cursor:pointer;font-weight:700;font-size:13px">PaddleOCR diagnostic (if needed)</summary>
+<summary style="cursor:pointer;font-weight:700;font-size:13px">TrOCR diagnostic (if needed)</summary>
 <p class="hint">The report contains recognised text and technical errors, but no photo file or saved health journal.</p>
 <textarea id="diagnosticText" readonly spellcheck="false" aria-label="Recognition diagnostic report" style="width:100%;height:155px;font:12px/1.4 ui-monospace,monospace;resize:vertical;border:1px solid #b5cbc5;border-radius:8px;padding:9px"></textarea>
 <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px">
@@ -34,7 +34,7 @@
 <div id="capacityNotice" class="notice" hidden></div>
 </section>
 <section class="card"><div class="head"><h2>Saved readings</h2><span class="small" id="count"></span></div><div id="history" class="small">Loading…</div></section>
-<p class="footer">Testing only. Photo recognition runs on-device after loading PaddleOCR models from the internet. Saved health records remain in this browser. Confirm every reading.</p>
+<p class="footer">Testing only. Experimental TrOCR model loads from the internet (substantial first download) and processes the photo on your device. Confirm every reading.</p>
 </main>
 <script>
 'use strict';
@@ -50,8 +50,8 @@ function readAll(){return new Promise((resolve,reject)=>{let r=db.transaction(ST
 function put(item){return new Promise((resolve,reject)=>{let tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(item);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)})}
 function remove(id){return new Promise((resolve,reject)=>{let tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)})}
 function releasePreview(){if(previewURL){URL.revokeObjectURL(previewURL);previewURL=null}}
-// PHI v1.0: browser-based PaddleOCR.js, replacing unsuccessful custom LCD segmentation.
-// The browser downloads a free OCR model on first use; images are processed locally.
+// PHI v1.1: independent OCR experiment using TrOCR (Transformer-based image-to-text).
+// Only the recognition engine changes. Existing IndexedDB records are preserved.
 let diagnosticLines=[];
 function logDiagnostic(message){
   diagnosticLines.push(String(message));
@@ -59,7 +59,7 @@ function logDiagnostic(message){
   $('diagnosticText').value=diagnosticLines.join('\n');
 }
 function resetDiagnostic(){
-  diagnosticLines=['PHI PaddleOCR diagnostic — v1.0', 'Timestamp: '+new Date().toISOString(),
+  diagnosticLines=['PHI TrOCR diagnostic — v1.1','Timestamp: '+new Date().toISOString(),
     'Device: '+navigator.userAgent.slice(0,180)];
   $('diagnosticText').value=diagnosticLines.join('\n');
   $('diagnosticStatus').textContent='';
@@ -74,7 +74,7 @@ $('copyDiagnostic').addEventListener('click',async()=>{
 $('downloadDiagnostic').addEventListener('click',()=>{
   const blob=new Blob([$('diagnosticText').value],{type:'text/plain;charset=utf-8'});
   const url=URL.createObjectURL(blob),a=document.createElement('a');
-  a.href=url;a.download='phi_paddleocr_diagnostic.txt';document.body.appendChild(a);a.click();a.remove();
+  a.href=url;a.download='phi_trocr_diagnostic.txt';document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),2500);
 });
 window.addEventListener('error',e=>logDiagnostic('JavaScript error: '+e.message));
@@ -83,95 +83,67 @@ window.addEventListener('unhandledrejection',e=>logDiagnostic('Unhandled rejecti
 async function getEngine(){
   if(!ocrEnginePromise){
     ocrEnginePromise=(async()=>{
-      logDiagnostic('Loading official PaddleOCR.js SDK 0.4.2 from jsDelivr');
-      const {PaddleOCR}=await import('https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-js@0.4.2/+esm');
-      logDiagnostic('Creating PP-OCRv6 tiny model; one-time download may be needed');
-      return PaddleOCR.create({
-        textDetectionModelName:'PP-OCRv6_tiny_det',
-        textRecognitionModelName:'PP-OCRv6_tiny_rec',
-        ortOptions:{backend:'wasm',numThreads:1}
-      });
+      logDiagnostic('Importing Transformers.js 2.17.2 from jsDelivr');
+      const {pipeline}=await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js');
+      logDiagnostic('Loading Xenova/trocr-small-printed, quantized ONNX weights');
+      // May be large or exceed the current iPhone's memory; failure is reported, not hidden.
+      return await pipeline('image-to-text','Xenova/trocr-small-printed',{quantized:true});
     })().catch(e=>{ocrEnginePromise=null;throw e});
   }
   return ocrEnginePromise;
 }
-async function makeCanvas(file,maxSide=1150){
+function parseReading(text){
+  const normalized=String(text||'').replace(/\s+/g,'').replace(/,/g,'.');
+  const exact=normalized.match(/^(?:[1-9]|[12]\d|3[0-5])\.\d$/);
+  return exact ? Number(normalized) : null;
+}
+async function digitCanvas(file){
   const url=URL.createObjectURL(file);
   try{
     const img=new Image();
-    await new Promise((resolve,reject)=>{
-      img.onload=resolve;img.onerror=()=>reject(new Error('Could not decode selected photo'));
-      img.src=url;
-    });
-    const scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
-    const canvas=document.createElement('canvas');
-    canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
-    canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
-    canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
-    logDiagnostic('Photo decoded: '+img.naturalWidth+'x'+img.naturalHeight+', OCR input '+canvas.width+'x'+canvas.height);
-    return canvas;
+    await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('Cannot decode photo'));img.src=url});
+    const w=img.naturalWidth,h=img.naturalHeight;
+    logDiagnostic('Photo decoded: '+w+'x'+h);
+    // A single rough display-focused window selected by image orientation, NOT per-image pixel coordinates.
+    // This is a limited feasibility test, not yet generalized visual localisation.
+    const r=w<h?{name:'portrait LCD digits',x:.405,y:.35,w:.19,h:.15}:{name:'landscape LCD digits',x:.385,y:.495,w:.14,h:.155};
+    const sx=Math.round(r.x*w),sy=Math.round(r.y*h),sw=Math.round(r.w*w),sh=Math.round(r.h*h);
+    const c=document.createElement('canvas');c.width=500;c.height=280;
+    const ctx=c.getContext('2d');ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);
+    ctx.drawImage(img,sx,sy,sw,sh,0,0,c.width,c.height);
+    logDiagnostic('Digit crop: '+r.name+' from '+sx+','+sy+','+sw+','+sh);
+    return c;
   }finally{URL.revokeObjectURL(url)}
-}
-function polygonSize(poly){
-  if(!Array.isArray(poly)||!poly.length)return 0;
-  const xs=poly.map(p=>p[0]),ys=poly.map(p=>p[1]);
-  return Math.max(0,Math.max(...xs)-Math.min(...xs))*Math.max(0,Math.max(...ys)-Math.min(...ys));
-}
-function glucoseTokens(items,width,height){
-  const found=[];
-  for(const item of items){
-    const text=String(item.text||'').trim(),score=Number(item.score)||0;
-    const poly=item.poly||[];
-    const area=polygonSize(poly),size=area/Math.max(1,width*height);
-    const matches=[...text.matchAll(/(?:^|[^\d])([1-9]|[12]\d|3[0-5])[.,]([0-9])(?=$|[^\d])/g)];
-    for(const m of matches){
-      const value=Number(m[1]+'.'+m[2]);
-      if(value>=1&&value<=35&&score>=.45){
-        // Prefer prominent numerals; small date/time text may also look like a glucose value.
-        const rank=score*(1+Math.min(2,size*130));
-        found.push({value,score,rank,size,text});
-      }
-    }
-  }
-  return found;
 }
 async function recognise(){
   if(!selectedFile||busy)return;
   const file=selectedFile,token=selectionToken;
-  busy=true;$('retry').disabled=true;
-  resetDiagnostic();
+  busy=true;$('retry').disabled=true;resetDiagnostic();
   logDiagnostic('Input file: '+file.type+', '+file.size+' bytes');
-  note('Loading PaddleOCR and analysing the photograph. The first model download may take longer…');
+  note('Loading TrOCR model and analysing glucose digits… First download is large and may fail on some phones.');
   try{
     const engine=await getEngine();
     if(token!==selectionToken)return;
-    const canvas=await makeCanvas(file);
-    note('Reading the display with PaddleOCR…');
-    const results=await engine.predict(canvas);
+    const canvas=await digitCanvas(file);
+    note('Reading glucose digits with TrOCR…');
+    const result=await engine(canvas.toDataURL('image/png'),{max_new_tokens:16});
     if(token!==selectionToken)return;
-    const items=results?.[0]?.items||[];
-    logDiagnostic('Detected text lines: '+items.length);
-    for(const item of items.slice(0,30)){
-      logDiagnostic('  '+JSON.stringify(String(item.text||'').slice(0,90))+' score='+Number(item.score||0).toFixed(2));
-    }
-    const candidates=glucoseTokens(items,canvas.width,canvas.height).sort((a,b)=>b.rank-a.rank);
-    logDiagnostic('Decimal candidates: '+(candidates.length?candidates.map(c=>c.value.toFixed(1)+'(score='+c.score.toFixed(2)+')').join(', '):'(none)'));
-    const unique=[...new Set(candidates.map(c=>c.value))];
-    if(unique.length===1){
-      $('glucose').value=candidates[0].value.toFixed(1);
-      note('Suggested: '+candidates[0].value.toFixed(1)+' mmol/L. Check the photograph and correct if needed before saving.');
-      logDiagnostic('Result: single tentative candidate '+candidates[0].value.toFixed(1));
-    }else if(unique.length>1){
-      note('PaddleOCR found multiple possible readings. Please verify the meter and enter the correct value.');
-      logDiagnostic('Result: ambiguous candidates; no auto-fill');
+    const raw=(Array.isArray(result)?result[0]?.generated_text:result?.generated_text)||'';
+    logDiagnostic('TrOCR raw output: '+JSON.stringify(raw));
+    const value=parseReading(raw);
+    if(value!==null){
+      $('glucose').value=value.toFixed(1);
+      note('Tentative TrOCR reading: '+value.toFixed(1)+' mmol/L. CHECK carefully against the photograph before saving.');
+      logDiagnostic('Result: tentative value '+value.toFixed(1));
     }else{
-      note('PaddleOCR did not confidently recognise the glucose value. You can enter it manually.');
-      logDiagnostic('Result: no usable decimal glucose reading');
+      note('TrOCR could not read a clear glucose value. You can enter the value manually.');
+      logDiagnostic('Result: no valid single glucose value');
     }
   }catch(e){
     const message=String(e?.message||e);
-    logDiagnostic('PaddleOCR error: '+message);
-    note('PaddleOCR unavailable: '+message.slice(0,140)+'. Manual entry still works.');
+    logDiagnostic('TrOCR error: '+message);
+    note('TrOCR could not run: '+message.slice(0,140)+'. Manual entry remains available.');
   }finally{busy=false;$('retry').disabled=!selectedFile}
 }
 $('photo').addEventListener('change',async()=>{
